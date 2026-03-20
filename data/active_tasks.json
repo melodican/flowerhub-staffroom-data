@@ -1,0 +1,61 @@
+{
+  "updated_at_utc": "2026-03-20T23:58:00Z",
+  "tasks": [
+    {
+      "agent": "Rose",
+      "status": "working",
+      "task": "Preparing first Blackpool florist outreach batch",
+      "started_at_utc": "2026-03-20T23:40:00Z",
+      "last_heartbeat_utc": "2026-03-20T23:58:00Z"
+    },
+    {
+      "agent": "Sage",
+      "status": "working",
+      "task": "Verifying florist leads and filtering non-florist contacts",
+      "started_at_utc": "2026-03-20T23:35:00Z",
+      "last_heartbeat_utc": "2026-03-20T23:58:00Z"
+    },
+    {
+      "agent": "Daisy",
+      "status": "working",
+      "task": "Monitoring onboarding and support escalation queue",
+      "started_at_utc": "2026-03-20T23:30:00Z",
+      "last_heartbeat_utc": "2026-03-20T23:58:00Z"
+    },
+    {
+      "agent": "Lily",
+      "status": "working",
+      "task": "Executing Blackpool SEO queue from SEO execution order",
+      "started_at_utc": "2026-03-20T23:38:00Z",
+      "last_heartbeat_utc": "2026-03-20T23:58:00Z"
+    },
+    {
+      "agent": "Poppy",
+      "status": "queued",
+      "task": "Preparing social distribution posts with florist CTA",
+      "started_at_utc": "2026-03-20T23:58:00Z",
+      "last_heartbeat_utc": "2026-03-20T23:58:00Z"
+    },
+    {
+      "agent": "Iris",
+      "status": "working",
+      "task": "KPI board integrity check and nightly proof logging",
+      "started_at_utc": "2026-03-20T23:32:00Z",
+      "last_heartbeat_utc": "2026-03-20T23:58:00Z"
+    },
+    {
+      "agent": "Orchid",
+      "status": "working",
+      "task": "Maintaining send suppression guard and inbox rail reliability",
+      "started_at_utc": "2026-03-20T23:31:00Z",
+      "last_heartbeat_utc": "2026-03-20T23:58:00Z"
+    },
+    {
+      "agent": "Ivy",
+      "status": "working",
+      "task": "Monitoring hello@flowerhub.uk inbox auto-reply loop",
+      "started_at_utc": "2026-03-20T22:18:00Z",
+      "last_heartbeat_utc": "2026-03-20T23:58:00Z"
+    }
+  ]
+}
