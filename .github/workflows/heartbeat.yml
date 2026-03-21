@@ -1,40 +1,35 @@
 name: heartbeat
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *"
-
-concurrency:
-  group: heartbeat-main
-  cancel-in-progress: true
+workflow_dispatch:
+schedule:
+- cron: "*/5 * * * *"
 
 jobs:
-  heartbeat:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+heartbeat:
+runs-on: ubuntu-latest
+permissions:
+contents: write
+steps:
+- name: Checkout main
+uses: actions/checkout@v4
+with:
+ref: main
+fetch-depth: 0
 
-    steps:
-      - name: Checkout main branch
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
+- name: Setup Node
+uses: actions/setup-node@v4
+with:
+node-version: "20"
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+- name: Generate active tasks
+run: node scripts/generate-heartbeat.mjs
+env:
+LOG_FILE: ./data/inbox_log.jsonl
+QUEUE_FILE: ./data/inbox_queue.json
+OUT_FILE: ./data/active_tasks.json
 
-      - name: Generate active tasks
-        run: node scripts/generate-heartbeat.mjs
-        env:
-          LOG_FILE: ./data/inbox_log.jsonl
-          QUEUE_FILE: ./data/inbox_queue.json
-          OUT_FILE: ./data/active_tasks.json
-
-     - name: Commit and push if changed
+- name: Commit and push if changed
 run: |
 git config user.name "heartbeat-bot"
 git config user.email "bot@flowerhub.uk"
