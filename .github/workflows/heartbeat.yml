@@ -2,14 +2,13 @@ name: heartbeat
 
 on:
 workflow_dispatch:
-schedule:
-- cron: "*/5 * * * *"
 
 jobs:
 heartbeat:
 runs-on: ubuntu-latest
 permissions:
 contents: write
+
 steps:
 - name: Checkout main
 uses: actions/checkout@v4
