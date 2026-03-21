@@ -1,9 +1,13 @@
 name: heartbeat
 
 on:
-workflow_dispatch:
 schedule:
-- cron: '*/5 * * * *'
+- cron: "*/5 * * * *"
+workflow_dispatch:
+
+concurrency:
+group: heartbeat-main
+cancel-in-progress: true
 
 jobs:
 heartbeat:
@@ -20,9 +24,9 @@ fetch-depth: 0
 - name: Setup Node
 uses: actions/setup-node@v4
 with:
-node-version: '20'
+node-version: 20
 
-- name: Generate active tasks
+- name: Generate active_tasks.json
 run: node scripts/generate-heartbeat.mjs
 env:
 LOG_FILE: ./data/inbox_log.jsonl
@@ -33,11 +37,17 @@ OUT_FILE: ./data/active_tasks.json
 run: |
 git config user.name "heartbeat-bot"
 git config user.email "bot@flowerhub.uk"
+
 git add data/active_tasks.json
-if git diff --cached --quiet; then
-echo "No changes"
-exit 0
-fi
+git diff --cached --quiet && echo "No changes" && exit 0
+
 git commit -m "chore: heartbeat update"
-git pull --rebase origin main
-git push origin HEAD:main
+
+for i in 1 2 3; do
+git pull --rebase origin main && git push origin HEAD:main && exit 0
+echo "retry $i"
+sleep $((i * 2))
+done
+
+echo "Failed to push after retries"
+exit 1
