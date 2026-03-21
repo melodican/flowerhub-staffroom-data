@@ -34,5 +34,15 @@ jobs:
           QUEUE_FILE: ./data/inbox_queue.json
           OUT_FILE: ./data/active_tasks.json
 
-      - name: Commit and push if changed
-        run: git config user.name "heartbeat-bot" && git config user.email "bot@flowerhub.uk" && git pull --rebase origin main && git add data/active_tasks.json && (git diff --cached --quiet || git commit -m "chore: heartbeat update") && git push origin main
+     - name: Commit and push if changed
+run: |
+git config user.name "heartbeat-bot"
+git config user.email "bot@flowerhub.uk"
+git pull --rebase origin main
+git add data/active_tasks.json
+if git diff --cached --quiet; then
+echo "No changes"
+exit 0
+fi
+git commit -m "chore: heartbeat update"
+git push origin main
