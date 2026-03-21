@@ -1,0 +1,38 @@
+name: heartbeat
+
+on:
+schedule:
+- cron: "*/5 * * * *"
+workflow_dispatch:
+push:
+branches: [main]
+
+jobs:
+heartbeat:
+runs-on: ubuntu-latest
+permissions:
+contents: write
+
+steps:
+- name: Checkout
+uses: actions/checkout@v4
+
+- name: Setup Node
+uses: actions/setup-node@v4
+with:
+node-version: 20
+
+- name: Generate active_tasks.json
+run: node scripts/generate-heartbeat.mjs
+env:
+LOG_FILE: ./data/inbox_log.jsonl
+QUEUE_FILE: ./data/inbox_queue.json
+OUT_FILE: ./data/active_tasks.json
+
+- name: Commit and push if changed
+run: |
+git config user.name "heartbeat-bot"
+git config user.email "bot@flowerhub.uk"
+git add data/active_tasks.json
+git diff --cached --quiet || git commit -m "chore: heartbeat update"
+git push
