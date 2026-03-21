@@ -1,46 +1,38 @@
 name: heartbeat
 
 on:
-workflow_dispatch:
-schedule:
-- cron: "*/5 * * * *"
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
 
 concurrency:
-group: heartbeat-main
-cancel-in-progress: true
+  group: heartbeat-main
+  cancel-in-progress: true
 
 jobs:
-heartbeat:
-runs-on: ubuntu-latest
-permissions:
-contents: write
+  heartbeat:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
-steps:
-- name: Checkout main branch
-uses: actions/checkout@v4
-with:
-ref: main
-fetch-depth: 0
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
-- name: Setup Node
-uses: actions/setup-node@v4
-with:
-node-version: "20"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-- name: Generate active tasks
-run: node scripts/generate-heartbeat.mjs
-env:
-LOG_FILE: ./data/inbox_log.jsonl
-QUEUE_FILE: ./data/inbox_queue.json
-OUT_FILE: ./data/active_tasks.json
+      - name: Generate active tasks
+        run: node scripts/generate-heartbeat.mjs
+        env:
+          LOG_FILE: ./data/inbox_log.jsonl
+          QUEUE_FILE: ./data/inbox_queue.json
+          OUT_FILE: ./data/active_tasks.json
 
-- name: Commit if changed
-run: |
-git config user.name "heartbeat-bot"
-git config user.email "bot@flowerhub.uk"
-git add data/active_tasks.json
-git diff --cached --quiet && echo "No changes" && exit 0
-git commit -m "chore: heartbeat update"
-
-- name: Push
-run: git push origin main
+      - name: Commit and push if changed
+        run: git config user.name "heartbeat-bot" && git config user.email "bot@flowerhub.uk" && git pull --rebase origin main && git add data/active_tasks.json && (git diff --cached --quiet || git commit -m "chore: heartbeat update") && git push origin main
