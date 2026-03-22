@@ -1,0 +1,1246 @@
+From 92e0782139e060a0fa22230c2a7f7b7aee3165d5 Mon Sep 17 00:00:00 2001
+From: Glen Kirkham <Glenkirkham@gmail.com>
+Date: Sun, 22 Mar 2026 22:16:46 +0000
+Subject: [PATCH 1/2] fix(studio-auth): remove local dev auth popup and add
+ unlock flow
+
+- Bypass access gate entirely when running in dev mode on loopback
+  (127.0.0.1/::1) so the browser never sees a bare 401 in local dev
+- Replace plain-text 401 page with an in-app HTML unlock form so
+  Safari and other browsers cannot trigger a native credentials dialog
+- Add POST /api/studio/access/unlock endpoint: validates token, sets
+  studio_access cookie (HttpOnly, SameSite=Strict), returns JSON
+- API routes still receive JSON 401 with a clear hint (no popup)
+- Production/public-host protection unchanged: token always enforced
+  when not in dev+loopback mode
+- Add README troubleshooting section covering why popup happens,
+  how to disable for local dev, and how to unlock via form or curl
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+---
+ README.md             |  57 ++++++++++++
+ server/access-gate.js | 204 ++++++++++++++++++++++++++++++++++++++++--
+ server/index.js       |  10 ++-
+ 3 files changed, 264 insertions(+), 7 deletions(-)
+
+diff --git a/README.md b/README.md
+index bd2b441..147a809 100644
+--- a/README.md
++++ b/README.md
+@@ -202,6 +202,63 @@ If the UI loads but Connect fails, the problem is usually on the Studio -> Gatew
+ - `401 Studio access token required` usually means `STUDIO_ACCESS_TOKEN` is enabled and the request is missing the expected `studio_access` cookie.
+ - Helpful proxy error codes include `studio.gateway_url_missing`, `studio.gateway_token_missing`, `studio.upstream_error`, and `studio.upstream_closed`.
+ 
++### Browser shows a login/auth popup on localhost
++
++**Why it happens:** If `STUDIO_ACCESS_TOKEN` is set in your shell environment or a `.env.local`
++file, the studio access gate activates and returns a `401` for unauthenticated page requests.
++Some browsers (notably Safari on macOS) display a native credentials dialog for any bare 401,
++even without a `WWW-Authenticate` header.
++
++**How to disable for local dev (recommended):**
++
++The server automatically bypasses the access gate when running in dev mode on a loopback
++address (`127.0.0.1` / `::1` / `localhost`). All you need to do is make sure
++`STUDIO_ACCESS_TOKEN` is **not** set in your shell when running `npm run dev`:
++
++```bash
++# Check if it's set
++echo $STUDIO_ACCESS_TOKEN
++
++# Unset for the current session
++unset STUDIO_ACCESS_TOKEN
++
++# Or run dev without it
++STUDIO_ACCESS_TOKEN= npm run dev
++```
++
++Alternatively, leave the line commented out in `.env.local`:
++
++```env
++# STUDIO_ACCESS_TOKEN=   ← keep this commented out for local dev
++```
++
++**How to unlock if the token IS set:**
++
++If you need `STUDIO_ACCESS_TOKEN` set locally (e.g. testing production auth flow), the gate
++shows an in-app **Studio Locked** screen instead of a browser popup. Enter your token there
++and click **Unlock Studio** — it sets a `studio_access` cookie and reloads.
++
++You can also unlock via curl:
++
++```bash
++curl -s -c cookies.txt -X POST http://localhost:3000/api/studio/access/unlock \
++  -H "Content-Type: application/json" \
++  -d '{"token":"your-token-here"}'
++# → {"ok":true}
++```
++
++**Verify the popup is gone:**
++
++```bash
++curl -I http://localhost:3000
++# Should NOT contain: WWW-Authenticate
++# Should return: 200 OK  (dev, no token set)
++#            or: 401 with HTML unlock page  (token set, not yet unlocked)
++```
++
++**Production / public host:** `STUDIO_ACCESS_TOKEN` is always enforced when binding to a
++public IP or hostname. The server refuses to start on a public host without it.
++
+ ## Contributing
+ 
+ Keep pull requests focused, run `npm run lint`, `npm run typecheck`, and `npm run test` before opening a PR, and update docs when behavior or architecture changes.
+diff --git a/server/access-gate.js b/server/access-gate.js
+index cd8e529..4a5932c 100644
+--- a/server/access-gate.js
++++ b/server/access-gate.js
+@@ -1,3 +1,5 @@
++const UNLOCK_PATH = "/api/studio/access/unlock";
++
+ const parseCookies = (header) => {
+   const raw = typeof header === "string" ? header : "";
+   if (!raw.trim()) return {};
+@@ -13,6 +15,149 @@ const parseCookies = (header) => {
+   return out;
+ };
+ 
++const readBody = (req) =>
++  new Promise((resolve) => {
++    let data = "";
++    req.on("data", (chunk) => {
++      data += String(chunk);
++    });
++    req.on("end", () => resolve(data));
++    req.on("error", () => resolve(""));
++  });
++
++const resolvePathname = (url) => {
++  const raw = typeof url === "string" ? url : "/";
++  const idx = raw.indexOf("?");
++  return (idx === -1 ? raw : raw.slice(0, idx)) || "/";
++};
++
++const LOCKED_PAGE_HTML = `<!DOCTYPE html>
++<html lang="en">
++<head>
++  <meta charset="utf-8" />
++  <meta name="viewport" content="width=device-width, initial-scale=1" />
++  <title>Studio Locked – Claw3D</title>
++  <style>
++    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
++    body {
++      min-height: 100vh;
++      display: flex;
++      align-items: center;
++      justify-content: center;
++      background: #0f0f13;
++      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
++      color: #e2e8f0;
++    }
++    .card {
++      background: #1a1a24;
++      border: 1px solid #2d2d3d;
++      border-radius: 14px;
++      padding: 36px 32px;
++      width: 100%;
++      max-width: 400px;
++      text-align: center;
++    }
++    .lock-icon { font-size: 36px; margin-bottom: 14px; }
++    h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; color: #f8fafc; }
++    p { font-size: 14px; color: #94a3b8; margin-bottom: 24px; line-height: 1.5; }
++    input[type="password"] {
++      width: 100%;
++      background: #0f0f13;
++      border: 1px solid #3d3d52;
++      border-radius: 8px;
++      padding: 10px 14px;
++      font-size: 14px;
++      color: #e2e8f0;
++      margin-bottom: 12px;
++      outline: none;
++    }
++    input[type="password"]:focus { border-color: #6366f1; }
++    button {
++      width: 100%;
++      background: #6366f1;
++      color: #fff;
++      border: none;
++      border-radius: 8px;
++      padding: 11px 14px;
++      font-size: 14px;
++      font-weight: 600;
++      cursor: pointer;
++      transition: background 0.15s;
++    }
++    button:hover { background: #4f46e5; }
++    button:disabled { background: #3730a3; cursor: not-allowed; }
++    .error {
++      margin-top: 12px;
++      font-size: 13px;
++      color: #f87171;
++      min-height: 18px;
++    }
++    .hint {
++      margin-top: 20px;
++      font-size: 12px;
++      color: #475569;
++      line-height: 1.6;
++      border-top: 1px solid #2d2d3d;
++      padding-top: 16px;
++    }
++    code {
++      background: #0f0f13;
++      border: 1px solid #2d2d3d;
++      border-radius: 4px;
++      padding: 1px 5px;
++      font-family: monospace;
++      font-size: 11px;
++    }
++  </style>
++</head>
++<body>
++  <div class="card">
++    <div class="lock-icon">🔒</div>
++    <h1>Studio Locked</h1>
++    <p>This Claw3D instance requires an access token.<br />Enter your <code>STUDIO_ACCESS_TOKEN</code> to continue.</p>
++    <input type="password" id="token" placeholder="Access token" autocomplete="current-password" />
++    <button id="btn" onclick="unlock()">Unlock Studio</button>
++    <div class="error" id="err"></div>
++    <div class="hint">
++      Running locally? Unset <code>STUDIO_ACCESS_TOKEN</code> in your shell or <code>.env.local</code> to skip this screen in dev mode.
++    </div>
++  </div>
++  <script>
++    document.getElementById("token").addEventListener("keydown", function(e) {
++      if (e.key === "Enter") unlock();
++    });
++    async function unlock() {
++      const token = document.getElementById("token").value.trim();
++      const btn = document.getElementById("btn");
++      const err = document.getElementById("err");
++      if (!token) { err.textContent = "Please enter an access token."; return; }
++      btn.disabled = true;
++      btn.textContent = "Checking…";
++      err.textContent = "";
++      try {
++        const res = await fetch("${UNLOCK_PATH}", {
++          method: "POST",
++          headers: { "Content-Type": "application/json" },
++          body: JSON.stringify({ token }),
++        });
++        const data = await res.json();
++        if (res.ok && data.ok) {
++          window.location.reload();
++        } else {
++          err.textContent = data.error || "Invalid token. Check STUDIO_ACCESS_TOKEN.";
++          btn.disabled = false;
++          btn.textContent = "Unlock Studio";
++        }
++      } catch {
++        err.textContent = "Network error. Is the dev server still running?";
++        btn.disabled = false;
++        btn.textContent = "Unlock Studio";
++      }
++    }
++  </script>
++</body>
++</html>`;
++
+ function createAccessGate(options) {
+   const token = String(options?.token ?? "").trim();
+   const cookieName = String(options?.cookieName ?? "studio_access").trim() || "studio_access";
+@@ -26,24 +171,74 @@ function createAccessGate(options) {
+     return cookies[cookieName] === token;
+   };
+ 
++  const handleUnlock = async (req, res) => {
++    if (req.method !== "POST") {
++      res.statusCode = 405;
++      res.setHeader("Content-Type", "application/json");
++      res.end(JSON.stringify({ error: "Method not allowed" }));
++      return;
++    }
++
++    const body = await readBody(req);
++    let providedToken = "";
++    try {
++      const parsed = JSON.parse(body);
++      providedToken = String(parsed.token ?? "").trim();
++    } catch {
++      const params = new URLSearchParams(body);
++      providedToken = String(params.get("token") ?? "").trim();
++    }
++
++    if (enabled && providedToken === token) {
++      res.statusCode = 200;
++      res.setHeader(
++        "Set-Cookie",
++        `${cookieName}=${token}; HttpOnly; SameSite=Strict; Path=/`
++      );
++      res.setHeader("Content-Type", "application/json");
++      res.end(JSON.stringify({ ok: true }));
++    } else {
++      res.statusCode = 403;
++      res.setHeader("Content-Type", "application/json");
++      res.end(
++        JSON.stringify({
++          error: "Invalid access token. Check your STUDIO_ACCESS_TOKEN.",
++        })
++      );
++    }
++  };
++
+   const handleHttp = (req, res) => {
+     if (!enabled) return false;
++
++    const pathname = resolvePathname(req.url);
++
++    // Unlock endpoint is always accessible — it's how the user proves their token
++    if (pathname === UNLOCK_PATH) {
++      void handleUnlock(req, res);
++      return true;
++    }
++
+     if (!isAuthorized(req)) {
+-      if (String(req.url || "/").startsWith("/api/")) {
++      if (pathname.startsWith("/api/")) {
++        // API callers get JSON — no WWW-Authenticate header, no browser popup
+         res.statusCode = 401;
+         res.setHeader("Content-Type", "application/json");
+         res.end(
+           JSON.stringify({
+-            error: "Studio access token required. Send the configured Studio access cookie and retry.",
++            error: "Studio access token required.",
++            hint: `POST ${UNLOCK_PATH} with {"token":"<value>"} to unlock.`,
+           })
+         );
+       } else {
++        // Page requests get the unlock UI — no browser native auth dialog
+         res.statusCode = 401;
+-        res.setHeader("Content-Type", "text/plain");
+-        res.end("Studio access token required. Set the studio_access cookie to access this page.");
++        res.setHeader("Content-Type", "text/html; charset=utf-8");
++        res.end(LOCKED_PAGE_HTML);
+       }
+       return true;
+     }
++
+     return false;
+   };
+ 
+@@ -56,4 +251,3 @@ function createAccessGate(options) {
+ }
+ 
+ module.exports = { createAccessGate };
+-
+diff --git a/server/index.js b/server/index.js
+index 06c965d..3a7de72 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -3,7 +3,7 @@ const next = require("next");
+ 
+ const { createAccessGate } = require("./access-gate");
+ const { createGatewayProxy } = require("./gateway-proxy");
+-const { assertPublicHostAllowed, resolveHosts } = require("./network-policy");
++const { assertPublicHostAllowed, resolveHosts, isPublicHost } = require("./network-policy");
+ const { loadUpstreamGatewaySettings } = require("./studio-settings");
+ 
+ const resolvePort = () => {
+@@ -39,8 +39,14 @@ async function main() {
+   });
+   const handle = app.getRequestHandler();
+ 
++  // In local dev, bypass the access gate entirely so the browser never sees a 401.
++  // On public hosts STUDIO_ACCESS_TOKEN is always enforced (assertPublicHostAllowed
++  // already throws if you try to bind to a public host without a token).
++  const isLocalhostOnly = hostnames.every((h) => !isPublicHost(h));
++  const gateToken = dev && isLocalhostOnly ? "" : process.env.STUDIO_ACCESS_TOKEN;
++
+   const accessGate = createAccessGate({
+-    token: process.env.STUDIO_ACCESS_TOKEN,
++    token: gateToken,
+   });
+ 
+   const proxy = createGatewayProxy({
+-- 
+2.50.1 (Apple Git-155)
+
+
+From 04f66ab64ae9abbfd1db7dc62c65fb1e2dbd2498 Mon Sep 17 00:00:00 2001
+From: Glen Kirkham <Glenkirkham@gmail.com>
+Date: Sun, 22 Mar 2026 22:21:36 +0000
+Subject: [PATCH 2/2] feat(flowerhub-ops): add FlowerHub 3D Ops view wired to
+ real staffroom data
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+New route at /flowerhub shows a 4-panel ops dashboard reading directly
+from /Users/glenkirkham/flowerhub-staffroom-data/data/:
+
+Panels:
+- Active Agents    ← active_tasks.json (LIVE/STALE/MISSING, 10m threshold)
+- Sprint Board     ← OFFICE-BOARD.md active sprint cards
+- Task Queue       ← TASK-BOARD.md WIP=1 card queue
+- Inbox Queue      ← inbox_queue.json, needs-human items highlighted
+
+Features:
+- Per-source LIVE/STALE/MISSING badge + "updated X ago" timestamp
+- Manual refresh button + 60s auto-refresh countdown
+- Priority strip from Office Board objective
+- Agent roles from Agent Route Map shown under each agent card
+- 30s server-side in-memory cache; FLOWERHUB_DATA_DIR env var for portability
+- No changes to existing /office, /agents, or any existing scene
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+---
+ src/app/api/flowerhub-ops/route.ts            | 261 +++++++++
+ src/app/flowerhub/page.tsx                    |  42 ++
+ .../flowerhub-ops/FlowerhubOpsView.tsx        | 516 ++++++++++++++++++
+ 3 files changed, 819 insertions(+)
+ create mode 100644 src/app/api/flowerhub-ops/route.ts
+ create mode 100644 src/app/flowerhub/page.tsx
+ create mode 100644 src/features/flowerhub-ops/FlowerhubOpsView.tsx
+
+diff --git a/src/app/api/flowerhub-ops/route.ts b/src/app/api/flowerhub-ops/route.ts
+new file mode 100644
+index 0000000..68ade0a
+--- /dev/null
++++ b/src/app/api/flowerhub-ops/route.ts
+@@ -0,0 +1,261 @@
++import { NextResponse } from "next/server";
++import fs from "node:fs";
++import path from "node:path";
++
++export const dynamic = "force-dynamic";
++
++const DATA_DIR =
++  process.env.FLOWERHUB_DATA_DIR ??
++  "/Users/glenkirkham/flowerhub-staffroom-data/data";
++
++// Stale thresholds per source
++const STALE_MS = {
++  activeTasks: 10 * 60 * 1000, // 10 min — agents heartbeat frequently
++  inboxQueue: 60 * 60 * 1000, // 60 min — inbox syncs hourly
++  officeBoard: 24 * 60 * 60 * 1000, // 24 h — edited manually
++  taskBoard: 24 * 60 * 60 * 1000, // 24 h — edited manually
++} as const;
++
++type DataStatus = "LIVE" | "STALE" | "MISSING";
++
++// ── File helpers ───────────────────────────────────────────────────────────
++
++function readLocal(filename: string): { content: string | null; mtime: Date | null } {
++  try {
++    const filepath = path.join(DATA_DIR, filename);
++    const stat = fs.statSync(filepath);
++    const content = fs.readFileSync(filepath, "utf-8");
++    return { content, mtime: stat.mtime };
++  } catch {
++    return { content: null, mtime: null };
++  }
++}
++
++function statusFor(updatedAt: Date | null, thresholdMs: number): DataStatus {
++  if (!updatedAt) return "MISSING";
++  return Date.now() - updatedAt.getTime() > thresholdMs ? "STALE" : "LIVE";
++}
++
++// ── TASK-BOARD.md parser ───────────────────────────────────────────────────
++
++export interface TaskCard {
++  id: string;
++  title: string;
++  owner: string;
++  deadline: string;
++  kpi: string;
++  status: "ACTIVE" | "QUEUED" | "BLOCKED" | string;
++}
++
++function parseTaskBoard(md: string): TaskCard[] {
++  const cards: TaskCard[] = [];
++  // Match ## Card N (STATUS) sections
++  const sections = md.split(/^## /m).slice(1);
++  for (const section of sections) {
++    const headerMatch = section.match(/^(Card \d+)\s*\(([^)]+)\)/i);
++    if (!headerMatch) continue;
++    const id = headerMatch[1];
++    const statusFromHeader = headerMatch[2].trim().toUpperCase();
++
++    const field = (key: string) => {
++      const m = section.match(new RegExp(`\\*\\*${key}:\\*\\*\\s*(.+)`, "i"));
++      return m ? m[1].trim() : "";
++    };
++
++    cards.push({
++      id,
++      title: field("Title"),
++      owner: field("Owner"),
++      deadline: field("Deadline"),
++      kpi: field("KPI"),
++      status: field("Status").toUpperCase() || statusFromHeader,
++    });
++  }
++  return cards;
++}
++
++// ── OFFICE-BOARD.md parser ─────────────────────────────────────────────────
++
++export interface SprintCard {
++  id: string;
++  task: string;
++  owner: string;
++  deadline: string;
++  kpi: string;
++  status: "ACTIVE" | "QUEUED" | "BLOCKED" | string;
++}
++
++export interface AgentRoute {
++  name: string;
++  role: string;
++}
++
++export interface OfficeBoardData {
++  objective: string;
++  priorities: string[];
++  sprintCards: SprintCard[];
++  agentRoutes: AgentRoute[];
++  lastUpdated: string;
++}
++
++function parseOfficeBoard(md: string): OfficeBoardData {
++  const objective =
++    md.match(/## Company Objective\s*\n([^\n#]+)/)?.[1]?.trim() ?? "";
++
++  const lastUpdated =
++    md.match(/Last updated:\s*([^\n]+)/)?.[1]?.trim() ?? "";
++
++  // Priority list
++  const priorityBlock = md.match(/## Priority Order[\s\S]*?\n((?:\d+\..+\n?)+)/);
++  const priorities: string[] = [];
++  if (priorityBlock) {
++    for (const line of priorityBlock[1].split("\n")) {
++      const m = line.match(/^\d+\.\s*(.+)/);
++      if (m) priorities.push(m[1].trim());
++    }
++  }
++
++  // Sprint cards (### Card AN (...))
++  const sprintCards: SprintCard[] = [];
++  const sprintSection = md.match(/## Active Sprint[\s\S]*/)?.[0] ?? "";
++  const cardSections = sprintSection.split(/^### /m).slice(1);
++  for (const section of cardSections) {
++    const headerMatch = section.match(/^(Card [A-Z0-9]+)\s*\(([^)]+)\)/i);
++    if (!headerMatch) continue;
++    const id = headerMatch[1];
++    const statusFromHeader = headerMatch[2].trim().toUpperCase();
++
++    const field = (key: string) => {
++      const m = section.match(new RegExp(`^- ${key}:\\s*(.+)`, "im"));
++      return m ? m[1].trim() : "";
++    };
++
++    sprintCards.push({
++      id,
++      task: field("Task"),
++      owner: field("Owner"),
++      deadline: field("Deadline"),
++      kpi: field("KPI"),
++      status: field("Status").toUpperCase() || statusFromHeader,
++    });
++  }
++
++  // Agent route map
++  const agentRoutes: AgentRoute[] = [];
++  const routeSection = md.match(/## Agent Route Map([\s\S]*?)(?=\n##|$)/)?.[1] ?? "";
++  for (const line of routeSection.split("\n")) {
++    const m = line.match(/^- ([^:]+):\s*(.+)/);
++    if (m) agentRoutes.push({ name: m[1].trim(), role: m[2].trim() });
++  }
++
++  return { objective, lastUpdated, priorities, sprintCards, agentRoutes };
++}
++
++// ── Active tasks shape ─────────────────────────────────────────────────────
++
++export interface ActiveAgent {
++  agent: string;
++  status: string;
++  current_task: string;
++  started_at?: string;
++  last_heartbeat?: string;
++  source?: string;
++  confidence?: string;
++}
++
++// ── Inbox shape ────────────────────────────────────────────────────────────
++
++export interface InboxItem {
++  id: string;
++  from: string;
++  subject: string;
++  category: string;
++  assigned_to: string;
++  status: string;
++  needs_human?: boolean;
++  received: string;
++  created_at_utc?: string;
++}
++
++// ── In-memory cache ────────────────────────────────────────────────────────
++
++let _cache: { data: unknown; at: number } | null = null;
++const CACHE_TTL_MS = 30_000;
++
++// ── Route handler ──────────────────────────────────────────────────────────
++
++export async function GET() {
++  if (_cache && Date.now() - _cache.at < CACHE_TTL_MS) {
++    return NextResponse.json(_cache.data);
++  }
++
++  const now = new Date().toISOString();
++
++  // active_tasks.json
++  const { content: atRaw, mtime: atMtime } = readLocal("active_tasks.json");
++  let activeAgents: ActiveAgent[] = [];
++  let atUpdatedAt: Date | null = null;
++  if (atRaw) {
++    try {
++      const parsed: { updated_at?: string; agents?: ActiveAgent[] } = JSON.parse(atRaw);
++      activeAgents = parsed.agents ?? [];
++      atUpdatedAt = parsed.updated_at ? new Date(parsed.updated_at) : atMtime;
++    } catch {
++      atUpdatedAt = atMtime;
++    }
++  }
++
++  // inbox_queue.json
++  const { content: iqRaw, mtime: iqMtime } = readLocal("inbox_queue.json");
++  let inboxItems: InboxItem[] = [];
++  let iqUpdatedAt: Date | null = null;
++  if (iqRaw) {
++    try {
++      const parsed: { updated_at_utc?: string; items?: InboxItem[] } = JSON.parse(iqRaw);
++      inboxItems = parsed.items ?? [];
++      iqUpdatedAt = parsed.updated_at_utc ? new Date(parsed.updated_at_utc) : iqMtime;
++    } catch {
++      iqUpdatedAt = iqMtime;
++    }
++  }
++
++  // OFFICE-BOARD.md
++  const { content: obRaw, mtime: obMtime } = readLocal("OFFICE-BOARD.md");
++  const officeBoard: OfficeBoardData | null = obRaw ? parseOfficeBoard(obRaw) : null;
++
++  // TASK-BOARD.md
++  const { content: tbRaw, mtime: tbMtime } = readLocal("TASK-BOARD.md");
++  const taskCards: TaskCard[] = tbRaw ? parseTaskBoard(tbRaw) : [];
++
++  const data = {
++    activeAgents,
++    inboxItems: inboxItems.slice(0, 20), // cap for UI
++    officeBoard,
++    taskCards,
++    meta: {
++      generatedAt: now,
++      dataDir: DATA_DIR,
++      sources: {
++        activeTasks: {
++          status: statusFor(atUpdatedAt, STALE_MS.activeTasks),
++          updatedAt: atUpdatedAt?.toISOString() ?? null,
++        },
++        inboxQueue: {
++          status: statusFor(iqUpdatedAt, STALE_MS.inboxQueue),
++          updatedAt: iqUpdatedAt?.toISOString() ?? null,
++        },
++        officeBoard: {
++          status: statusFor(obMtime, STALE_MS.officeBoard),
++          updatedAt: obMtime?.toISOString() ?? null,
++        },
++        taskBoard: {
++          status: statusFor(tbMtime, STALE_MS.taskBoard),
++          updatedAt: tbMtime?.toISOString() ?? null,
++        },
++      },
++    },
++  };
++
++  _cache = { data, at: Date.now() };
++  return NextResponse.json(data);
++}
+diff --git a/src/app/flowerhub/page.tsx b/src/app/flowerhub/page.tsx
+new file mode 100644
+index 0000000..d98027c
+--- /dev/null
++++ b/src/app/flowerhub/page.tsx
+@@ -0,0 +1,42 @@
++import type { Metadata } from "next";
++import { FlowerhubOpsView } from "@/features/flowerhub-ops/FlowerhubOpsView";
++
++export const dynamic = "force-dynamic";
++
++export const metadata: Metadata = {
++  title: "FlowerHub Ops · Claw3D",
++  description: "FlowerHub 3D Operations Office — real-time agent and task monitoring.",
++  robots: "noindex, nofollow",
++};
++
++async function fetchOpsData() {
++  try {
++    // Server-side: call own API directly rather than going through network
++    const { GET } = await import("@/app/api/flowerhub-ops/route");
++    const res = await GET();
++    return res.json() as Promise<Parameters<typeof FlowerhubOpsView>[0]["initial"]>;
++  } catch {
++    // Fallback empty state — client will fetch on mount
++    return {
++      activeAgents: [],
++      inboxItems: [],
++      officeBoard: null,
++      taskCards: [],
++      meta: {
++        generatedAt: new Date().toISOString(),
++        dataDir: "",
++        sources: {
++          activeTasks: { status: "MISSING" as const, updatedAt: null },
++          inboxQueue: { status: "MISSING" as const, updatedAt: null },
++          officeBoard: { status: "MISSING" as const, updatedAt: null },
++          taskBoard: { status: "MISSING" as const, updatedAt: null },
++        },
++      },
++    };
++  }
++}
++
++export default async function FlowerhubPage() {
++  const initial = await fetchOpsData();
++  return <FlowerhubOpsView initial={initial} />;
++}
+diff --git a/src/features/flowerhub-ops/FlowerhubOpsView.tsx b/src/features/flowerhub-ops/FlowerhubOpsView.tsx
+new file mode 100644
+index 0000000..fbbc685
+--- /dev/null
++++ b/src/features/flowerhub-ops/FlowerhubOpsView.tsx
+@@ -0,0 +1,516 @@
++"use client";
++
++import { useCallback, useEffect, useRef, useState } from "react";
++import type {
++  ActiveAgent,
++  AgentRoute,
++  InboxItem,
++  OfficeBoardData,
++  SprintCard,
++  TaskCard,
++} from "@/app/api/flowerhub-ops/route";
++
++// ── Types ──────────────────────────────────────────────────────────────────
++
++type DataStatus = "LIVE" | "STALE" | "MISSING";
++
++interface SourceMeta {
++  status: DataStatus;
++  updatedAt: string | null;
++}
++
++interface OpsData {
++  activeAgents: ActiveAgent[];
++  inboxItems: InboxItem[];
++  officeBoard: OfficeBoardData | null;
++  taskCards: TaskCard[];
++  meta: {
++    generatedAt: string;
++    sources: {
++      activeTasks: SourceMeta;
++      inboxQueue: SourceMeta;
++      officeBoard: SourceMeta;
++      taskBoard: SourceMeta;
++    };
++  };
++}
++
++// ── Helpers ────────────────────────────────────────────────────────────────
++
++const REFRESH_INTERVAL_MS = 60_000;
++
++function fmtTime(iso: string | null): string {
++  if (!iso) return "—";
++  const d = new Date(iso);
++  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
++}
++
++function fmtAgo(iso: string | null): string {
++  if (!iso) return "—";
++  const deltaMs = Date.now() - new Date(iso).getTime();
++  if (deltaMs < 60_000) return "just now";
++  if (deltaMs < 3_600_000) return `${Math.floor(deltaMs / 60_000)}m ago`;
++  return `${Math.floor(deltaMs / 3_600_000)}h ago`;
++}
++
++// ── Sub-components ─────────────────────────────────────────────────────────
++
++function StatusBadge({ status }: { status: DataStatus }) {
++  const styles: Record<DataStatus, string> = {
++    LIVE: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",
++    STALE: "bg-amber-500/15 text-amber-300 border-amber-500/25",
++    MISSING: "bg-red-500/15 text-red-300 border-red-500/25",
++  };
++  return (
++    <span
++      className={`rounded border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] ${styles[status]}`}
++    >
++      {status}
++    </span>
++  );
++}
++
++function PanelHeader({
++  title,
++  source,
++}: {
++  title: string;
++  source: SourceMeta;
++}) {
++  return (
++    <div className="flex items-center justify-between border-b border-cyan-500/10 px-4 py-3">
++      <div>
++        <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.22em] text-white/70">
++          {title}
++        </div>
++        <div className="mt-0.5 font-mono text-[10px] text-white/35">
++          updated {fmtAgo(source.updatedAt)} · {fmtTime(source.updatedAt)}
++        </div>
++      </div>
++      <StatusBadge status={source.status} />
++    </div>
++  );
++}
++
++function AgentsPanel({
++  agents,
++  source,
++  agentRoutes,
++}: {
++  agents: ActiveAgent[];
++  source: SourceMeta;
++  agentRoutes: AgentRoute[];
++}) {
++  const roleMap = Object.fromEntries(agentRoutes.map((r) => [r.name.toLowerCase(), r.role]));
++
++  return (
++    <div className="flex h-full flex-col">
++      <PanelHeader title="Active Agents" source={source} />
++      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
++        {source.status === "MISSING" ? (
++          <Empty text="active_tasks.json not found" />
++        ) : agents.length === 0 ? (
++          <Empty text="No active agents in feed" />
++        ) : (
++          agents.map((a) => {
++            const isLive = a.source === "runtime";
++            const hbAgo = a.last_heartbeat ? fmtAgo(a.last_heartbeat) : null;
++            return (
++              <div
++                key={a.agent}
++                className="mb-2 rounded border border-white/8 bg-white/[0.03] px-3 py-3"
++              >
++                <div className="flex items-center gap-2">
++                  <span
++                    className={`h-2 w-2 shrink-0 rounded-full ${
++                      a.status === "working"
++                        ? "bg-emerald-400"
++                        : a.status === "blocked"
++                          ? "bg-red-400"
++                          : "bg-amber-400/70"
++                    }`}
++                  />
++                  <span className="flex-1 truncate font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-white/85">
++                    {a.agent}
++                  </span>
++                  {isLive && (
++                    <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-emerald-300">
++                      live
++                    </span>
++                  )}
++                </div>
++                {a.current_task ? (
++                  <div className="mt-1.5 line-clamp-2 font-mono text-[11px] leading-5 text-white/60">
++                    {a.current_task}
++                  </div>
++                ) : null}
++                <div className="mt-1.5 flex items-center gap-3 font-mono text-[10px] text-white/35">
++                  {roleMap[a.agent.toLowerCase()] ? (
++                    <span>{roleMap[a.agent.toLowerCase()]}</span>
++                  ) : null}
++                  {hbAgo ? <span>♡ {hbAgo}</span> : null}
++                  {a.confidence ? (
++                    <span className="capitalize">{a.confidence} confidence</span>
++                  ) : null}
++                </div>
++              </div>
++            );
++          })
++        )}
++      </div>
++    </div>
++  );
++}
++
++function SprintPanel({
++  cards,
++  source,
++}: {
++  cards: SprintCard[];
++  source: SourceMeta;
++}) {
++  const active = cards.filter((c) => c.status === "ACTIVE");
++  const queued = cards.filter((c) => c.status !== "ACTIVE");
++
++  return (
++    <div className="flex h-full flex-col">
++      <PanelHeader title="Sprint Board" source={source} />
++      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
++        {source.status === "MISSING" ? (
++          <Empty text="OFFICE-BOARD.md not found" />
++        ) : cards.length === 0 ? (
++          <Empty text="No sprint cards parsed" />
++        ) : (
++          <>
++            {active.length > 0 && (
++              <div className="mb-1 px-2 pb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-cyan-300/60">
++                Active ({active.length})
++              </div>
++            )}
++            {active.map((c) => (
++              <SprintCard key={c.id} card={c} />
++            ))}
++            {queued.length > 0 && (
++              <div className="mb-1 mt-3 px-2 pb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
++                Queued ({queued.length})
++              </div>
++            )}
++            {queued.map((c) => (
++              <SprintCard key={c.id} card={c} />
++            ))}
++          </>
++        )}
++      </div>
++    </div>
++  );
++}
++
++function SprintCard({ card }: { card: SprintCard }) {
++  const isActive = card.status === "ACTIVE";
++  return (
++    <div
++      className={`mb-2 rounded border px-3 py-2.5 ${
++        isActive
++          ? "border-cyan-500/20 bg-cyan-500/[0.04]"
++          : "border-white/8 bg-white/[0.02]"
++      }`}
++    >
++      <div className="flex items-start gap-2">
++        <span
++          className={`mt-0.5 shrink-0 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] ${
++            isActive ? "text-cyan-400" : "text-white/35"
++          }`}
++        >
++          {card.id}
++        </span>
++        <span className="font-mono text-[11px] leading-5 text-white/80">
++          {card.task}
++        </span>
++      </div>
++      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-white/35">
++        {card.owner ? <span>👤 {card.owner}</span> : null}
++        {card.deadline ? <span>⏱ {card.deadline}</span> : null}
++      </div>
++      {card.kpi ? (
++        <div className="mt-1 font-mono text-[10px] leading-4 text-white/30">
++          KPI: {card.kpi}
++        </div>
++      ) : null}
++    </div>
++  );
++}
++
++function TaskQueuePanel({
++  cards,
++  source,
++}: {
++  cards: TaskCard[];
++  source: SourceMeta;
++}) {
++  return (
++    <div className="flex h-full flex-col">
++      <PanelHeader title="Task Queue (WIP=1)" source={source} />
++      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
++        {source.status === "MISSING" ? (
++          <Empty text="TASK-BOARD.md not found" />
++        ) : cards.length === 0 ? (
++          <Empty text="No task cards parsed" />
++        ) : (
++          cards.map((c, i) => {
++            const isActive = c.status === "ACTIVE";
++            return (
++              <div
++                key={c.id}
++                className={`mb-2 rounded border px-3 py-3 ${
++                  isActive
++                    ? "border-emerald-500/25 bg-emerald-500/[0.04]"
++                    : "border-white/8 bg-white/[0.02]"
++                }`}
++              >
++                <div className="flex items-start gap-2">
++                  <span
++                    className={`shrink-0 font-mono text-[11px] font-bold ${
++                      isActive ? "text-emerald-400" : "text-white/30"
++                    }`}
++                  >
++                    #{i + 1}
++                  </span>
++                  <div className="min-w-0 flex-1">
++                    <div className="font-mono text-[11px] leading-5 text-white/80">
++                      {c.title || c.id}
++                    </div>
++                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-white/35">
++                      {c.owner ? <span>👤 {c.owner}</span> : null}
++                      {c.deadline ? <span>⏱ {c.deadline}</span> : null}
++                      {isActive && (
++                        <span className="text-emerald-400/70">ACTIVE</span>
++                      )}
++                    </div>
++                    {c.kpi ? (
++                      <div className="mt-1 font-mono text-[10px] text-white/30">
++                        KPI: {c.kpi}
++                      </div>
++                    ) : null}
++                  </div>
++                </div>
++              </div>
++            );
++          })
++        )}
++      </div>
++    </div>
++  );
++}
++
++function InboxPanel({
++  items,
++  source,
++}: {
++  items: InboxItem[];
++  source: SourceMeta;
++}) {
++  const needsHuman = items.filter((i) => i.needs_human);
++  const rest = items.filter((i) => !i.needs_human).slice(0, 8);
++
++  return (
++    <div className="flex h-full flex-col">
++      <PanelHeader title="Inbox Queue" source={source} />
++      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
++        {source.status === "MISSING" ? (
++          <Empty text="inbox_queue.json not found" />
++        ) : items.length === 0 ? (
++          <Empty text="Inbox queue is empty" />
++        ) : (
++          <>
++            {needsHuman.length > 0 && (
++              <>
++                <div className="mb-1 px-2 pb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-amber-300/70">
++                  Needs Human ({needsHuman.length})
++                </div>
++                {needsHuman.map((item) => (
++                  <InboxRow key={item.id} item={item} highlight />
++                ))}
++                {rest.length > 0 && (
++                  <div className="mb-1 mt-3 px-2 pb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/35">
++                    Recent
++                  </div>
++                )}
++              </>
++            )}
++            {rest.map((item) => (
++              <InboxRow key={item.id} item={item} highlight={false} />
++            ))}
++          </>
++        )}
++      </div>
++    </div>
++  );
++}
++
++function InboxRow({
++  item,
++  highlight,
++}: {
++  item: InboxItem;
++  highlight: boolean;
++}) {
++  return (
++    <div
++      className={`mb-1.5 rounded border px-3 py-2 ${
++        highlight
++          ? "border-amber-500/25 bg-amber-500/[0.05]"
++          : "border-white/8 bg-white/[0.02]"
++      }`}
++    >
++      <div className="line-clamp-1 font-mono text-[11px] text-white/80">
++        {item.subject}
++      </div>
++      <div className="mt-1 flex items-center gap-3 font-mono text-[10px] text-white/35">
++        <span className="truncate">{item.from}</span>
++        {item.assigned_to ? <span>→ {item.assigned_to}</span> : null}
++        {item.status ? (
++          <span className="capitalize">{item.status.replace(/_/g, " ")}</span>
++        ) : null}
++      </div>
++    </div>
++  );
++}
++
++function Empty({ text }: { text: string }) {
++  return (
++    <div className="px-2 py-6 font-mono text-[11px] text-white/30">{text}</div>
++  );
++}
++
++// ── Main view ──────────────────────────────────────────────────────────────
++
++export function FlowerhubOpsView({ initial }: { initial: OpsData }) {
++  const [data, setData] = useState<OpsData>(initial);
++  const [loading, setLoading] = useState(false);
++  const [lastFetch, setLastFetch] = useState<Date>(new Date());
++  const [countdown, setCountdown] = useState(REFRESH_INTERVAL_MS / 1000);
++  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
++
++  const refresh = useCallback(async () => {
++    setLoading(true);
++    try {
++      const res = await fetch("/api/flowerhub-ops", { cache: "no-store" });
++      if (res.ok) {
++        const next = (await res.json()) as OpsData;
++        setData(next);
++        setLastFetch(new Date());
++      }
++    } catch {
++      // keep stale data
++    } finally {
++      setLoading(false);
++      setCountdown(REFRESH_INTERVAL_MS / 1000);
++    }
++  }, []);
++
++  // Auto-refresh every 60s
++  useEffect(() => {
++    timerRef.current = setInterval(() => {
++      void refresh();
++    }, REFRESH_INTERVAL_MS);
++    return () => {
++      if (timerRef.current) clearInterval(timerRef.current);
++    };
++  }, [refresh]);
++
++  // Countdown ticker
++  useEffect(() => {
++    const tick = setInterval(() => {
++      setCountdown((prev) => (prev <= 1 ? REFRESH_INTERVAL_MS / 1000 : prev - 1));
++    }, 1000);
++    return () => clearInterval(tick);
++  }, []);
++
++  const { sources } = data.meta;
++  const agentRoutes = data.officeBoard?.agentRoutes ?? [];
++
++  const overallStatus = Object.values(sources).some((s) => s.status === "MISSING")
++    ? "MISSING"
++    : Object.values(sources).some((s) => s.status === "STALE")
++      ? "STALE"
++      : "LIVE";
++
++  return (
++    <div className="flex h-screen flex-col bg-[#06090d] text-white">
++      {/* Header */}
++      <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/15 bg-black/60 px-6 py-3 backdrop-blur">
++        <div className="flex items-center gap-4">
++          <div>
++            <div className="font-mono text-[13px] font-semibold uppercase tracking-[0.22em] text-cyan-300">
++              FlowerHub Ops
++            </div>
++            <div className="font-mono text-[10px] text-white/40">
++              3D Mission Control · {data.officeBoard?.objective ?? "Loading…"}
++            </div>
++          </div>
++          <StatusBadge status={overallStatus} />
++        </div>
++
++        <div className="flex items-center gap-4">
++          <div className="font-mono text-[10px] text-white/35">
++            synced {fmtAgo(lastFetch.toISOString())} · refresh in {countdown}s
++          </div>
++          <button
++            type="button"
++            onClick={() => void refresh()}
++            disabled={loading}
++            className="rounded border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-cyan-300 transition-colors hover:border-cyan-400/50 hover:bg-cyan-500/15 disabled:opacity-40"
++          >
++            {loading ? "Syncing…" : "↺ Refresh"}
++          </button>
++        </div>
++      </header>
++
++      {/* Priority strip */}
++      {data.officeBoard?.priorities && data.officeBoard.priorities.length > 0 && (
++        <div className="shrink-0 border-b border-white/5 bg-black/30 px-6 py-2">
++          <div className="flex items-center gap-3 overflow-x-auto">
++            <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] text-white/30">
++              Priorities:
++            </span>
++            {data.officeBoard.priorities.map((p, i) => (
++              <span
++                key={i}
++                className="shrink-0 rounded bg-white/5 px-2 py-0.5 font-mono text-[10px] text-white/50"
++              >
++                {i + 1}. {p}
++              </span>
++            ))}
++          </div>
++        </div>
++      )}
++
++      {/* 4-panel grid */}
++      <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-px bg-white/5">
++        {/* Top-left: Active Agents */}
++        <div className="overflow-hidden bg-[#06090d]">
++          <AgentsPanel
++            agents={data.activeAgents}
++            source={sources.activeTasks}
++            agentRoutes={agentRoutes}
++          />
++        </div>
++
++        {/* Top-right: Sprint Board */}
++        <div className="overflow-hidden bg-[#06090d]">
++          <SprintPanel cards={data.officeBoard?.sprintCards ?? []} source={sources.officeBoard} />
++        </div>
++
++        {/* Bottom-left: Task Queue */}
++        <div className="overflow-hidden bg-[#06090d]">
++          <TaskQueuePanel cards={data.taskCards} source={sources.taskBoard} />
++        </div>
++
++        {/* Bottom-right: Inbox */}
++        <div className="overflow-hidden bg-[#06090d]">
++          <InboxPanel items={data.inboxItems} source={sources.inboxQueue} />
++        </div>
++      </div>
++    </div>
++  );
++}
+-- 
+2.50.1 (Apple Git-155)
+
