@@ -1,0 +1,102 @@
+From 0e7593c2a20c73511c43f003073d459bea69321d Mon Sep 17 00:00:00 2001
+From: Glen Kirkham <Glenkirkham@gmail.com>
+Date: Sun, 22 Mar 2026 22:36:43 +0000
+Subject: [PATCH] docs(flowerhub-ops): add data path config, sanity check, and
+ troubleshooting
+
+- Add "FlowerHub data path" section under Configuration covering:
+  FLOWERHUB_DATA_DIR env var, default path, staffroom-sync symlink
+  option, and shell sanity check for all four required files
+- Add troubleshooting entry for all-MISSING panels: path check first,
+  30s cache TTL note, quick curl probe command with status explanation
+- List FLOWERHUB_DATA_DIR in the env var reference table
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+---
+ README.md | 60 ++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 59 insertions(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 147a809..a1db843 100644
+--- a/README.md
++++ b/README.md
+@@ -161,9 +161,46 @@ Common environment variables:
+ - `OPENCLAW_STATE_DIR` and `OPENCLAW_CONFIG_PATH` override the default OpenClaw paths.
+ - `OPENCLAW_GATEWAY_SSH_TARGET` and `OPENCLAW_GATEWAY_SSH_USER` support gateway-host operations over SSH.
+ - `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and `ELEVENLABS_MODEL_ID` enable voice reply integration.
++- `FLOWERHUB_DATA_DIR` sets the path to the FlowerHub staffroom data directory (see below).
+ 
+ See [`.env.example`](.env.example) for the full local development template.
+ 
++### FlowerHub data path
++
++The `/flowerhub` ops view reads four files from a local staffroom data directory.
++
++**Default path (no env var set):**
++```
++/Users/glenkirkham/flowerhub-staffroom-data/data
++```
++
++**Override via env var** (add to `.env.local`):
++```env
++FLOWERHUB_DATA_DIR=/path/to/your/staffroom-data/data
++```
++
++**If your data lives at `/Users/glenkirkham/staffroom-sync`**, use either approach:
++
++*Option A — set the env var:*
++```env
++FLOWERHUB_DATA_DIR=/Users/glenkirkham/staffroom-sync/data
++```
++
++*Option B — create a symlink so the default path resolves automatically:*
++```bash
++ln -sfn /Users/glenkirkham/staffroom-sync /Users/glenkirkham/flowerhub-staffroom-data
++```
++
++**Sanity check** — run this before starting the dev server to confirm all four files are reachable:
++```bash
++DIR="${FLOWERHUB_DATA_DIR:-/Users/glenkirkham/flowerhub-staffroom-data/data}"
++for f in active_tasks.json OFFICE-BOARD.md TASK-BOARD.md inbox_queue.json; do
++  test -f "$DIR/$f" && echo "✓ $f" || echo "✗ MISSING: $f"
++done
++```
++
++All four should print `✓`. Any `✗` means the path is wrong — fix `FLOWERHUB_DATA_DIR` or create the symlink before proceeding.
++
+ ## Scripts
+ 
+ - `npm run dev` starts the Studio dev server.
+@@ -195,7 +232,28 @@ See [`.env.example`](.env.example) for the full local development template.
+ 
+ ## Troubleshooting
+ 
+-If the UI loads but Connect fails, the problem is usually on the Studio -> Gateway side:
++### `/flowerhub` shows all panels as MISSING
++
++The API route (`/api/flowerhub-ops`) could not read the staffroom data files. Path mismatch is
++the most common cause.
++
++**First check:** run the sanity check from the [FlowerHub data path](#flowerhub-data-path) section
++to confirm all four files are reachable from your current `FLOWERHUB_DATA_DIR`.
++
++**Cache note:** the API route caches responses for 30 seconds. After fixing the path, wait up to
++30s or restart the dev server for panels to switch from MISSING to LIVE.
++
++**Quick API probe:**
++```bash
++curl -s http://localhost:3000/api/flowerhub-ops | python3 -m json.tool | grep -A2 '"sources"'
++```
++Each source should show `"status": "LIVE"`. If all show `"MISSING"`, the data directory is wrong.
++If one shows `"STALE"`, the corresponding file hasn't been updated within its threshold
++(active\_tasks: 10 min · inbox\_queue: 60 min · board files: 24 h).
++
++---
++
++### If the UI loads but Connect fails, the problem is usually on the Studio -> Gateway side:
+ 
+ - Confirm the upstream URL and token in Studio settings.
+ - `EPROTO` or `wrong version number` usually means `wss://` was used against a non-TLS endpoint.
+-- 
+2.50.1 (Apple Git-155)
+
