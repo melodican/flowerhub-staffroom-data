@@ -1,47 +1,61 @@
 {
-  "updated_at_utc": "2026-03-22T21:46:00Z",
+  "updated_at_utc": "2026-03-22T21:53:00Z",
   "tasks": [
     {
       "agent": "Rose",
       "status": "working",
-      "task": "Executing florist-only outreach recovery block with partner link and receipt logging",
-      "started_at_utc": "2026-03-22T21:46:00Z",
-      "last_heartbeat_utc": "2026-03-22T21:46:00Z"
+      "task": "Executing florist-only outreach blocks with receipts and partner CTA",
+      "started_at_utc": "2026-03-22T21:53:00Z",
+      "last_heartbeat_utc": "2026-03-22T21:53:00Z"
     },
     {
       "agent": "Sage",
       "status": "working",
-      "task": "Sourcing and verifying independent florist leads only (non-florist domains quarantined)",
-      "started_at_utc": "2026-03-22T21:46:00Z",
-      "last_heartbeat_utc": "2026-03-22T21:46:00Z"
+      "task": "Sourcing and verifying independent florist leads (daily clean list feed)",
+      "started_at_utc": "2026-03-22T21:53:00Z",
+      "last_heartbeat_utc": "2026-03-22T21:53:00Z"
     },
     {
       "agent": "Daisy",
-      "status": "queued",
-      "task": "Preparing onboarding conversion sprint for outreach responders (signup to listing-ready)",
-      "started_at_utc": "2026-03-22T21:46:00Z",
-      "last_heartbeat_utc": "2026-03-22T21:46:00Z"
+      "status": "working",
+      "task": "Converting replies to onboarding-started and listing-ready states",
+      "started_at_utc": "2026-03-22T21:53:00Z",
+      "last_heartbeat_utc": "2026-03-22T21:53:00Z"
     },
     {
-      "agent": "Ivy",
+      "agent": "Lily",
       "status": "working",
-      "task": "Running support inbox in human-only mode with loop suppression active",
-      "started_at_utc": "2026-03-22T21:46:00Z",
-      "last_heartbeat_utc": "2026-03-22T21:46:00Z"
+      "task": "Running Blackpool/Fylde SEO production sprint (daily shipped assets)",
+      "started_at_utc": "2026-03-22T21:53:00Z",
+      "last_heartbeat_utc": "2026-03-22T21:53:00Z"
     },
     {
-      "agent": "Iris",
+      "agent": "Poppy",
       "status": "working",
-      "task": "Maintaining KPI proof integrity and day closeout artifact checks",
-      "started_at_utc": "2026-03-22T21:46:00Z",
-      "last_heartbeat_utc": "2026-03-22T21:46:00Z"
+      "task": "Publishing social distribution sprint (daily post blocks with CTA)",
+      "started_at_utc": "2026-03-22T21:53:00Z",
+      "last_heartbeat_utc": "2026-03-22T21:53:00Z"
     },
     {
       "agent": "Orchid",
       "status": "working",
-      "task": "Maintaining suppression, blocklist, and send safety rails for outreach",
-      "started_at_utc": "2026-03-22T21:46:00Z",
-      "last_heartbeat_utc": "2026-03-22T21:46:00Z"
+      "task": "Maintaining outreach rail safety, suppression, and blocklist enforcement",
+      "started_at_utc": "2026-03-22T21:53:00Z",
+      "last_heartbeat_utc": "2026-03-22T21:53:00Z"
+    },
+    {
+      "agent": "Ivy",
+      "status": "working",
+      "task": "Running inbox in human-only mode and preventing autoresponder loops",
+      "started_at_utc": "2026-03-22T21:53:00Z",
+      "last_heartbeat_utc": "2026-03-22T21:53:00Z"
+    },
+    {
+      "agent": "Iris",
+      "status": "working",
+      "task": "KPI proof QA and daily closeout integrity across all FlowerHub lanes",
+      "started_at_utc": "2026-03-22T21:53:00Z",
+      "last_heartbeat_utc": "2026-03-22T21:53:00Z"
     }
   ]
 }
