@@ -1,5 +1,5 @@
 {
-  "updated_at_utc": "2026-03-20T23:55:44.423486+00:00",
+  "updated_at_utc": "2026-03-22T21:50:01.327751+00:00",
   "items": [
     {
       "id": "AAMkAGJiODRmM2NjLWI5ZTAtNDI2YS1iYjQzLWU2MjVkOTUzOGU4ZABGAAAAAAC8Tw0_4fmWRqWNIAahoE31BwDKQd--qciHRK_yBhkEkp7nAAAAAAEMAADKQd--qciHRK_yBhkEkp7nAAAKt5lDAAA=",
@@ -265,6 +265,92 @@
       "status": "ack_sent",
       "created_at_utc": "2026-03-20T22:30:28.879326+00:00",
       "auto_replied_at_utc": "2026-03-20T22:30:29.215341+00:00"
+    },
+    {
+      "id": "AAMkAGJiODRmM2NjLWI5ZTAtNDI2YS1iYjQzLWU2MjVkOTUzOGU4ZABGAAAAAAC8Tw0_4fmWRqWNIAahoE31BwDKQd--qciHRK_yBhkEkp7nAAAAAAEMAADKQd--qciHRK_yBhkEkp7nAAALemh7AAA=",
+      "received": "2026-03-21T15:05:45Z",
+      "from": "support@almanac.com",
+      "subject": "[Request received]",
+      "isRead": false,
+      "category": "general_support",
+      "assigned_to": "Daisy",
+      "suppressed": false,
+      "needs_human": false,
+      "status": "ack_sent",
+      "created_at_utc": "2026-03-21T15:08:40.569919+00:00",
+      "auto_replied_at_utc": "2026-03-21T15:08:40.873238+00:00"
+    },
+    {
+      "id": "AAMkAGJiODRmM2NjLWI5ZTAtNDI2YS1iYjQzLWU2MjVkOTUzOGU4ZABGAAAAAAC8Tw0_4fmWRqWNIAahoE31BwDKQd--qciHRK_yBhkEkp7nAAAAAAEMAADKQd--qciHRK_yBhkEkp7nAAALemh6AAA=",
+      "received": "2026-03-21T15:05:45Z",
+      "from": "yourfriends@medium.com",
+      "subject": "How to contact Medium Support",
+      "isRead": false,
+      "category": "general_support",
+      "assigned_to": "Daisy",
+      "suppressed": false,
+      "needs_human": false,
+      "status": "ack_sent",
+      "created_at_utc": "2026-03-21T15:08:40.570042+00:00",
+      "auto_replied_at_utc": "2026-03-21T15:08:41.274743+00:00"
+    },
+    {
+      "id": "AAMkAGJiODRmM2NjLWI5ZTAtNDI2YS1iYjQzLWU2MjVkOTUzOGU4ZABGAAAAAAC8Tw0_4fmWRqWNIAahoE31BwDKQd--qciHRK_yBhkEkp7nAAAAAAEMAADKQd--qciHRK_yBhkEkp7nAAALemh9AAA=",
+      "received": "2026-03-21T15:08:51Z",
+      "from": "support@almanac.com",
+      "subject": "[Request received]",
+      "isRead": true,
+      "category": "general_support",
+      "assigned_to": "Daisy",
+      "suppressed": false,
+      "needs_human": false,
+      "status": "ack_sent",
+      "created_at_utc": "2026-03-21T15:10:01.965264+00:00",
+      "auto_replied_at_utc": "2026-03-21T15:10:02.263068+00:00"
+    },
+    {
+      "id": "AAMkAGJiODRmM2NjLWI5ZTAtNDI2YS1iYjQzLWU2MjVkOTUzOGU4ZABGAAAAAAC8Tw0_4fmWRqWNIAahoE31BwDKQd--qciHRK_yBhkEkp7nAAAAAAEMAADKQd--qciHRK_yBhkEkp7nAAALemh8AAA=",
+      "received": "2026-03-21T15:08:48Z",
+      "from": "yourfriends@medium.com",
+      "subject": "How to contact Medium Support",
+      "isRead": true,
+      "category": "general_support",
+      "assigned_to": "Daisy",
+      "suppressed": false,
+      "needs_human": false,
+      "status": "ack_sent",
+      "created_at_utc": "2026-03-21T15:10:01.965356+00:00",
+      "auto_replied_at_utc": "2026-03-21T15:10:02.632309+00:00"
+    },
+    {
+      "id": "AAMkAGJiODRmM2NjLWI5ZTAtNDI2YS1iYjQzLWU2MjVkOTUzOGU4ZABGAAAAAAC8Tw0_4fmWRqWNIAahoE31BwDKQd--qciHRK_yBhkEkp7nAAAAAAEMAADKQd--qciHRK_yBhkEkp7nAAALemh-AAA=",
+      "received": "2026-03-21T15:10:12Z",
+      "from": "support@almanac.com",
+      "subject": "[Request received]",
+      "isRead": true,
+      "category": "general_support",
+      "assigned_to": "Daisy",
+      "suppressed": true,
+      "auto_sender_or_responder": true,
+      "genuine_support": false,
+      "needs_human": false,
+      "status": "ignored",
+      "created_at_utc": "2026-03-21T15:13:13.723886+00:00"
+    },
+    {
+      "id": "AAMkAGJiODRmM2NjLWI5ZTAtNDI2YS1iYjQzLWU2MjVkOTUzOGU4ZABGAAAAAAC8Tw0_4fmWRqWNIAahoE31BwDKQd--qciHRK_yBhkEkp7nAAAAAAEMAADKQd--qciHRK_yBhkEkp7nAAALemh_AAA=",
+      "received": "2026-03-21T15:10:11Z",
+      "from": "yourfriends@medium.com",
+      "subject": "How to contact Medium Support",
+      "isRead": true,
+      "category": "general_support",
+      "assigned_to": "Daisy",
+      "suppressed": true,
+      "auto_sender_or_responder": true,
+      "genuine_support": false,
+      "needs_human": false,
+      "status": "ignored",
+      "created_at_utc": "2026-03-21T15:13:13.723970+00:00"
     }
   ]
 }

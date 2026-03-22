@@ -1,79 +1,47 @@
 # FlowerHub Office Board
 
-Last updated: 2026-03-20 22:37 Europe/London
+Last updated: 2026-03-22 21:46 Europe/London
 
 ## Company Objective
-Build FlowerHub into a revenue producing local marketplace, starting in Blackpool.
+Build FlowerHub into a revenue-producing local marketplace, starting with independent florists in Blackpool/Fylde.
 
-## Priority Order (rolling)
-1. Blackpool florist acquisition and onboarding
-2. Inbound support reliability and response speed
-3. Blackpool SEO execution stack
-4. Customer demand content loop
-5. KPI and proof reporting with no blank fields
+## Priority Order (this week)
+1. Florist-only outreach recovery (quality-first, no junk domains)
+2. Florist onboarding conversion sprint (reply -> signup -> listing-ready)
+3. Inbound support reliability (no auto-responder loops)
+4. KPI proof discipline and daily closeout artifacts
 
-## Active Sprint (48h)
+## Active Sprint (Mon-Fri)
 ### Card A1 (ACTIVE)
-- Task: Send first verified outreach block to florists
-- Owner: Rose
-- Deadline: 2026-03-21 12:00
-- KPI: 20 sends, replies logged, signups started
+- Task: Complete florist-only outreach recovery to target with receipts
+- Owner: Rose + Sage
+- Deadline: 2026-03-23 18:05
+- KPI: valid sends, replies, signup starts
 - Status: ACTIVE
 
-### Card A2 (ACTIVE)
-- Task: Build and verify next 30 florist leads
-- Owner: Sage
-- Deadline: 2026-03-21 10:00
-- KPI: 30 verified contacts, junk rate under 10 percent
-- Status: ACTIVE
+### Card A2 (QUEUED)
+- Task: Convert responders into onboarding and listing-ready states
+- Owner: Daisy + Rose
+- Deadline: 2026-03-25 18:00
+- KPI: signup starts, onboarding completed, listing-ready count
+- Status: QUEUED
 
 ### Card A3 (ACTIVE)
-- Task: Run inbox operations and direct response policy
+- Task: Inbox reliability + human-only support responses
 - Owner: Ivy
-- Deadline: Continuous, checkpoint every 2h
-- KPI: first response under 1h, needs-human queue tracked
+- Deadline: Continuous (checkpoints every 2h)
+- KPI: zero loop replies, first response SLA, needs-human queue
 - Status: ACTIVE
 
 ### Card A4 (ACTIVE)
-- Task: Execute Blackpool SEO order step 1 to 2
-- Owner: Lily
-- Deadline: 2026-03-21 EOD
-- KPI: shipped URLs logged with target keyword
-- Status: ACTIVE
-
-### Card A5 (QUEUED)
-- Task: Social support loop for florist and customer demand
-- Owner: Poppy
-- Deadline: 2026-03-21 EOD
-- KPI: 3 posts live with CTA links
-- Status: QUEUED
-
-### Card A6 (ACTIVE)
-- Task: Suppression and send safety checks before followups
-- Owner: Orchid
-- Deadline: Continuous
-- KPI: zero follow-up emails sent to signed-up partners
-- Status: ACTIVE
-
-### Card A7 (ACTIVE)
-- Task: KPI board integrity and nightly proof report
+- Task: KPI board integrity + end-of-day closeout artifact
 - Owner: Iris
-- Deadline: Daily 21:00
-- KPI: zero blank KPI fields in active lanes
+- Deadline: Daily 21:30
+- KPI: zero blank KPI fields in active lane updates
 - Status: ACTIVE
-
-## Agent Route Map
-- Rose: outreach and followups
-- Sage: lead sourcing and verification
-- Daisy: onboarding and support escalations
-- Lily: SEO execution
-- Poppy: social content and distribution
-- Iris: KPI and QA
-- Orchid: automations and rails
-- Ivy: inbox monitoring and direct replies
 
 ## Rules
-1. No blank KPI claims
-2. No outreach followup after signup or live status
-3. Every active card has owner, deadline, KPI, definition of done
-4. Done and blocked updates at midday and end of day
+1. No non-florist sends count toward target.
+2. No KPI claim without receipt proof.
+3. Done/Blocked/Need updates at midday and closeout.
+4. WIP=1 at global task board level.
